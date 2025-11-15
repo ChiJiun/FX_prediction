@@ -1,0 +1,7 @@
+numpy>=1.24
+pandas
+scikit-learn
+matplotlib
+torch
+torchvision
+ucimlrepo
