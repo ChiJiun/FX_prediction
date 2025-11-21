@@ -74,9 +74,9 @@ class TimeSeriesDataset(Dataset):
         return len(self.data) - self.seq_length
 
     def __getitem__(self, idx):
-        x = self.data[idx:idx + self.seq_length, :-1]  # 特徵
-        y = self.data[idx + self.seq_length, self.target_col]  # 目標（最後一欄）
-        return torch.tensor(x, dtype=torch.float32), torch.tensor(y, dtype=torch.float32)
+        x = self.data[idx:idx + self.seq_length, :-1]  # 特徵，形狀: (seq_length, num_features)
+        y = self.data[idx + self.seq_length, self.target_col]  # 目標（最後一欄），形狀: scalar
+        return torch.tensor(x, dtype=torch.float32), torch.tensor(y, dtype=torch.float32) 
 
 class QuantileLoss(nn.Module):
     def __init__(self, quantiles):
