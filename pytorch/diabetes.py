@@ -5,17 +5,43 @@ import torch.nn as nn                                       # 匯入神經網路
 import torch.optim as optim                                 # 匯入優化器模組
 from sklearn.metrics import mean_squared_error, r2_score    # 匯入評估指標函數
 import matplotlib.pyplot as plt                             # 匯入matplotlib用於視覺化
+import numpy as np                                        # 匯入NumPy庫
 
+# --- 1. 載入和準備數據 ---
 diabetes = load_diabetes()  # 載入糖尿病數據集：獲取包含特徵和目標的數據
 X = diabetes.data           # 獲取特徵數據：X是(442, 10)的特徵矩陣
 y = diabetes.target         # 獲取目標變數：y是(442,)的目標向量
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)  # 分割訓練和測試集，測試集佔20%：確保重現性，測試模型泛化
 
+# 將 Numpy 陣列轉換為 PyTorch 張量(Dataset接收張量)
 X_train = torch.tensor(X_train, dtype=torch.float32)                # 將訓練特徵轉換為PyTorch張量：PyTorch需要張量格式進行計算
 y_train = torch.tensor(y_train, dtype=torch.float32).view(-1, 1)    # 將訓練目標轉換為張量並調整形狀：從(353,)變為(353, 1)，匹配輸出
 X_test = torch.tensor(X_test, dtype=torch.float32)                  # 將測試特徵轉換為PyTorch張量：同上
 y_test = torch.tensor(y_test, dtype=torch.float32).view(-1, 1)      # 將測試目標轉換為張量並調整形狀：同上
 
+# --- 2. 自定義 Dataset ---
+class DiabetesDataset(torch.utils.data.Dataset):
+    """將特徵和目標張量包裝成 PyTorch Dataset."""
+    def __init__(self, X_tensors, y_tensor):            # 初始化函數，接收特徵和目標張量：存儲數據
+        self.features = X_tensors                       # 儲存特徵張量
+        self.targets = y_tensor                         # 儲存目標張量
+    def __len__(self):                                  # 返回數據集大小：定義數據集長度
+        return len(self.features)                       # 返回特徵數量
+    def __getitem__(self, idx):                         # 根據索引返回單個樣本：定義如何獲取數據
+        return self.features[idx], self.targets[idx]    # 返回對應的特徵和目標
+    
+# --- 3. 建立 DataLoader ---
+# 建立 Dataset 實例
+train_dataset = DiabetesDataset(X_train, y_train)   # 建立訓練數據集
+test_dataset = DiabetesDataset(X_test, y_test)      # 建立測試數據集
+# 設定 批量大小、worker 數量
+batch_size = 32
+num_workers = 0  # 簡單數據集可設為0
+# 建立 DataLoader 實例
+train_loader = torch.utils.data.DataLoader(dataset=train_dataset, batch_size=batch_size, shuffle=True, num_workers=num_workers)     # 訓練數據加載器
+test_loader = torch.utils.data.DataLoader(dataset=test_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers)      # 測試數據加載器
+
+# --- 4. 定義模型、損失函數和優化器 ---
 class Simple3LayerNN(nn.Module):  # 定義一個簡單的三層神經網路類：繼承nn.Module，建立自定義模型
     def __init__(self, input_dim):                          # 初始化函數，接收輸入維度 (input_dim: int)：設定層參數
         super(Simple3LayerNN, self).__init__()              # 呼叫父類初始化：確保正確繼承
@@ -33,28 +59,54 @@ model = Simple3LayerNN(input_dim=X_train.shape[1])      # 實例化模型，輸�
 criterion = nn.MSELoss()                                # 定義均方誤差損失函數：適合回歸任務，衡量預測誤差
 optimizer = optim.Adam(model.parameters(), lr=0.01)     # 定義Adam優化器，學習率0.01：高效更新參數
 
-train_losses = []                                           # 用於存儲每個epoch的訓練損失：便於後續視覺化
+train_losses = []                                       # 用於存儲每個epoch的訓練損失：便於後續視覺化
+"""Regression任務好像不需要紀錄準確率"""
+train_accuracies = []                                   # 用於存儲每個epoch的訓練準確率（可選）：便於後續視覺化
+
+# --- 5. 訓練迴圈 ---
 for epoch in range(100):                                    # 訓練100個epoch：epoch是訓練的一次完整遍歷，即模型處理整個訓練數據集一次
-    optimizer.zero_grad()                                   # 清空梯度：避免累積梯度
-    output = model(X_train)                                 # 模型前向傳播：計算預測
-    loss = criterion(output, y_train)                       # 計算損失：比較預測與真實
-    loss.backward()                                         # 反向傳播：計算梯度
-    optimizer.step()                                        # 更新參數：根據梯度調整權重
-    train_losses.append(loss.item())                        # 收集損失：添加到列表
+    model.train()
+    running_loss = 0.0
+    
+    for batch_X, batch_y in train_loader:  # 遍歷每個批次：使用DataLoader獲取批次數據
+        optimizer.zero_grad()                             # 清除梯度：避免累積
+        outputs = model(batch_X)                          # 前向傳播：獲取預測
+        loss = criterion(outputs, batch_y)                # 計算損失：衡量預測與真實值差距
+        loss.backward()                                   # 反向傳播：計算梯度
+        optimizer.step()                                  # 更新參數：根據梯度調整模型權重
+        running_loss += loss.item() * batch_X.size(0)     # 累積損失：便於計算平均損失
+    
+    train_losses.append(running_loss / len(train_loader.dataset))  # 計算並存儲平均損失
+
     if epoch % 10 == 0:                                     # 每10個epoch印出一次損失：監控進展
         print(f"Epoch {epoch}, Loss: {loss.item():.4f}")    # 印出當前epoch和損失：顯示訓練狀態
 
-# 測試評估
+# --- 6. 測試評估 ---
 model.eval()                                                        # 設定模型為評估模式：禁用dropout等訓練專用層
-with torch.no_grad():                                               # 禁用梯度計算：節省記憶體，提高速度
-    test_output = model(X_test)                                     # 測試集前向傳播：獲取預測
-    test_loss = criterion(test_output, y_test)                      # 計算測試損失：評估測試性能
-    mse = mean_squared_error(y_test.numpy(), test_output.numpy())   # 計算均方誤差：平均誤差平方
-    r2 = r2_score(y_test.numpy(), test_output.numpy())              # 計算R²分數：解釋變異比例
-    print(f"Test Loss: {test_loss.item():.4f}")                     # 印出測試損失：顯示測試結果
-    print(f"Test MSE: {mse:.4f}")                                   # 印出測試MSE：同上
-    print(f"Test R²: {r2:.4f}")                                     # 印出測試R²：同上
+test_precisions = []
+test_targets = []
+total_test_loss = 0.0
 
+with torch.no_grad():                                               # 禁用梯度計算：節省記憶體，提高速度
+    for batch_X, batch_y in test_loader:                            # 遍歷測試集批次
+        outputs = model(batch_X)                                    # 前向傳播：獲取預測
+        loss = criterion(outputs, batch_y)                          # 計算損失：衡量預測與真實值差距
+        total_test_loss += loss.item() * batch_X.size(0)            # 累積測試損失：便於計算平均損失
+        test_precisions.append(outputs.numpy())                             # 儲存預測值：便於後續評估
+        test_targets.append(batch_y.numpy())                                # 儲存真實值：同上
+
+final_precisions = np.concatenate(test_precisions, axis=0)          # 合併所有批次預測值
+final_targets = np.concatenate(test_targets, axis=0)                # 合併所有批次真實值
+
+avg_test_loss = total_test_loss / len(test_loader.dataset)          # 計算平均測試損失
+mse = mean_squared_error(final_targets, final_precisions)           # 計算均方誤差
+r2 = r2_score(final_targets, final_precisions)                      # 計算R²分數
+test_output = torch.tensor(final_precisions)                        # 將最終預測值轉換為張量：便於後續視覺化   
+print(f"Test Loss: {avg_test_loss:.4f}")                            # 印出測試損失：顯示測試結果
+print(f"Test MSE: {mse:.4f}")                                       # 印出測試MSE：同上
+print(f"Test R²: {r2:.4f}")                                         # 印出測試R²：同上
+
+# --- 7. 視覺化結果 ---
 # 視覺化
 plt.figure(figsize=(15, 10))  # 設定圖表大小：容納四個子圖
 
@@ -97,3 +149,4 @@ plt.show()  # 顯示圖表
 
 # 保存模型
 torch.save(model.state_dict(), 'diabetes_model.pth')  # 保存模型狀態字典到文件：儲存訓練好的參數
+torch.load('diabetes_model.pth')
