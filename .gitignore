@@ -147,3 +147,8 @@ Thumbs.db
 # Temporary files
 *.tmp
 *.temp
+
+# Ignore wandb directory contents except .py files
+wandb/*
+wandb/**/
+!wandb/**/*.py

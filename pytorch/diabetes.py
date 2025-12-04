@@ -14,7 +14,7 @@ y = diabetes.target         # 獲取目標變數：y是(442,)的目標向量
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)  # 分割訓練和測試集，測試集佔20%：確保重現性，測試模型泛化
 
 # 將 Numpy 陣列轉換為 PyTorch 張量(Dataset接收張量)
-X_train = torch.tensor(X_train, dtype=torch.float32)                # 將訓練特徵轉換為PyTorch張量：PyTorch需要張量格式進行計算
+X_train = torch.tensor(X_train, dtype=torch.float32)                # 將訓練特徵轉換為PyTorch張量：PyTorch需要張量格式進行計算 (353, 10)
 y_train = torch.tensor(y_train, dtype=torch.float32).view(-1, 1)    # 將訓練目標轉換為張量並調整形狀：從(353,)變為(353, 1)，匹配輸出
 X_test = torch.tensor(X_test, dtype=torch.float32)                  # 將測試特徵轉換為PyTorch張量：同上
 y_test = torch.tensor(y_test, dtype=torch.float32).view(-1, 1)      # 將測試目標轉換為張量並調整形狀：同上
@@ -22,14 +22,14 @@ y_test = torch.tensor(y_test, dtype=torch.float32).view(-1, 1)      # 將測試�
 # --- 2. 自定義 Dataset ---
 class DiabetesDataset(torch.utils.data.Dataset):
     """將特徵和目標張量包裝成 PyTorch Dataset."""
-    def __init__(self, X_tensors, y_tensor):            # 初始化函數，接收特徵和目標張量：存儲數據
+    def __init__(self, X_tensors, y_tensor):            # 初始化函數，接收特徵和目標張量：存儲數據 [353, 10], [353, 1]
         self.features = X_tensors                       # 儲存特徵張量
         self.targets = y_tensor                         # 儲存目標張量
-    def __len__(self):                                  # 返回數據集大小：定義數據集長度
-        return len(self.features)                       # 返回特徵數量
+    def __len__(self):                                  # 返回數據集大小：定義數據集長度 
+        return len(self.features)                       # 返回特徵張量的長度
     def __getitem__(self, idx):                         # 根據索引返回單個樣本：定義如何獲取數據
         return self.features[idx], self.targets[idx]    # 返回對應的特徵和目標
-    
+
 # --- 3. 建立 DataLoader ---
 # 建立 Dataset 實例
 train_dataset = DiabetesDataset(X_train, y_train)   # 建立訓練數據集
@@ -149,4 +149,13 @@ plt.show()  # 顯示圖表
 
 # 保存模型
 torch.save(model.state_dict(), 'diabetes_model.pth')  # 保存模型狀態字典到文件：儲存訓練好的參數
-torch.load('diabetes_model.pth')
+
+# 載入模型並進行預測
+model.load_state_dict(torch.load('diabetes_model.pth'))  # 載入保存的模型參數
+model.eval()  # 設定為評估模式
+
+# 示例預測：使用測試數據的第一個樣本
+with torch.no_grad():
+    sample_input = X_test[0].unsqueeze(0)  # 取第一個測試樣本，增加批次維度
+    prediction = model(sample_input)  # 進行預測
+    print(f"Sample Prediction: {prediction.item():.4f}, Actual: {y_test[0].item():.4f}")  # 印出預測和實際值
